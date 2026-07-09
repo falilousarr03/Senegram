@@ -59,14 +59,15 @@ C'est un projet **full-stack pédagogique et fonctionnel** : tout le code est li
 - Chat **1-à-1** et **groupes** (création, ajout/suppression de membres, rôles)
 - Messages texte avec **édition** et **suppression**
 - **Réponse** à un message (citation)
+- **Épinglage** de messages par les admins (messages épinglés visibles en haut)
+- **Recherche** dans les messages (texte, photos, médias)
 - **Indicateurs de lecture** en temps réel
 - **Indicateur "est en train d'écrire"** (typing)
 - **Présence** en ligne / hors ligne / `last_seen`
 
 ### 📎 Partage de fichiers
-- 📷 Images (JPG, PNG, WEBP, GIF…)
+- 📷 Images (JPG, PNG, WEBP, GIF…) avec compression automatique
 - 🎬 Vidéos (MP4, WEBM…)
-- 🎙️ Audio (MP3, OGG, WAV…)
 - 📄 Documents (PDF, DOCX, XLSX, PPTX, TXT…)
 - Limite par défaut : **50 Mo** (configurable)
 
@@ -74,15 +75,22 @@ C'est un projet **full-stack pédagogique et fonctionnel** : tout le code est li
 - Appels **1-à-1** audio ou vidéo
 - Signaling via **Socket.IO**, médias en pair-à-pair via **WebRTC**
 - Serveurs **STUN** Google par défaut, **TURN** configurable pour passer les NAT restrictifs
-- Contrôles : couper le micro, couper la caméra, raccrocher
+- Contrôles : couper le micro, couper la caméra, raccrocher, changer de caméra
 - Timer d'appel + interface plein écran
 - Historique des appels persisté en base
+
+### 🎙️ Messages vocaux
+- Enregistrement avec **MediaRecorder** (WebM Opus)
+- Interface de prévisualisation avant envoi (play/pause, suppression)
+- Upload automatique vers le backend
+- Durée max : 5 minutes par message
+- Indicateur visuel du temps d'enregistrement
 
 ### 🎨 Interface
 - Design moderne, responsive (desktop + mobile)
 - Palette aux couleurs du Sénégal 🇸🇳 (vert, jaune, rouge)
 - **TailwindCSS** + composants React découpés
-- Mode clair par défaut
+- Mode clair par défaut, interface accessible
 
 ---
 
@@ -146,13 +154,14 @@ senegram/
 | Couche       | Technologies                                                    |
 |--------------|-----------------------------------------------------------------|
 | **Frontend** | React 18, Vite 5, TailwindCSS 3, React Router 6, Axios, Lucide  |
-|              | socket.io-client 4, react-hot-toast, date-fns                   |
+|              | socket.io-client 4, react-hot-toast, date-fns, Workbox (PWA)   |
 | **Backend**  | Node.js 18+, Express 4, Socket.IO 4, MySQL2 (pool de connexions)|
 |              | JWT, bcryptjs, Multer (uploads), Helmet, CORS, Morgan           |
-|              | express-rate-limit, selfsigned (HTTPS dev)                      |
+|              | express-rate-limit, selfsigned (HTTPS dev), web-push            |
 | **DB**       | MySQL 8 (XAMPP / WAMP / standalone)                             |
 | **Temps-réel** | Socket.IO (chat, présence, typing, signaling WebRTC)          |
 | **Médias**   | WebRTC natif navigateur, STUN Google (TURN optionnel)           |
+| **PWA**      | Service Worker (notifications push), manifest.json               |
 
 ---
 
@@ -310,7 +319,8 @@ Toutes les routes (sauf `/api/auth/register` et `/api/auth/login`) requièrent u
 | GET     | `/api/messages/conversation/:id`          | Liste des messages            |
 | POST    | `/api/messages/conversation/:id`          | Envoyer un message            |
 | PATCH   | `/api/messages/:id`                       | Éditer un message             |
-| DELETE  | `/api/messages/:id`                       | Supprimer un message          |
+| DELETE  | `/api/messages/:id`                       | Supprimer un message           |
+| PATCH   | `/api/messages/:id/pin`                   | Épingler / désépingler (admin) |
 
 ### Groupes
 | Méthode | URL                                       | Rôle                          |
@@ -326,7 +336,14 @@ Toutes les routes (sauf `/api/auth/register` et `/api/auth/login`) requièrent u
 |---------|----------------------------------|-------------------------------|
 | POST    | `/api/upload/file`               | Upload d'un fichier (multipart) |
 | POST    | `/api/upload/avatar`             | Upload d'un avatar              |
+| POST    | `/api/upload/voice`              | Upload d'une note vocale        |
 | GET     | `/api/calls/conversation/:id`    | Historique des appels           |
+
+### Push (Notifications)
+| Méthode | URL                              | Rôle                               |
+|---------|----------------------------------|-------------------------------------|
+| POST    | `/api/push/subscribe`            | Abonner le navigateur aux notifications |
+| POST    | `/api/push/unsubscribe`          | Se désabonner                        |
 
 ---
 
@@ -361,18 +378,21 @@ Connexion : `io(<API_URL>, { auth: { token: <jwt> } })`
 
 ## 🗄️ Schéma de la base de données
 
-8 tables principales :
+11 tables :
 
 | Table                  | Rôle                                                    |
 |------------------------|---------------------------------------------------------|
-| `users`                | Comptes (avec status, last_seen, avatar)                |
+| `users`                | Comptes (status, last_seen, avatar, is_online)          |
 | `contacts`             | Carnet d'adresses (avec blocage)                        |
 | `conversations`        | 1-à-1 et groupes                                        |
 | `conversation_members` | Membres + rôle (`owner` / `admin` / `member`)           |
-| `messages`             | Messages texte / fichiers / réponses                    |
-| `attachments`          | Métadonnées des pièces jointes                          |
-| `calls`                | Historique des appels (audio/vidéo, durée, statut)      |
+| `messages`             | Messages texte / fichiers / vocaux / réponses / épinglés |
+| `attachments`          | Métadonnées des pièces jointes (dont durée audio)       |
 | `message_reads`        | Indicateurs de lecture par utilisateur                  |
+| `message_reactions`    | Réactions emoji aux messages                            |
+| `calls`                | Historique des appels (audio/vidéo, durée, statut)      |
+| `call_participants`    | Participants à chaque appel                              |
+| `push_subscriptions`   | Abonnements push (Web Push)                              |
 
 Voir `backend/database/schema.sql` pour le détail (clés étrangères, index, contraintes).
 
@@ -398,8 +418,6 @@ Dans `scripts/` :
 ## 🧭 Roadmap
 
 - [ ] Appels en groupe (SFU type **mediasoup** ou **LiveKit**)
-- [ ] Messages vocaux (MediaRecorder, déjà câblé côté upload)
-- [ ] Notifications push navigateur (Web Push API)
 - [ ] Chiffrement E2E (protocole Signal)
 - [ ] Application mobile (React Native ou Capacitor)
 - [ ] Modération & système de signalement
