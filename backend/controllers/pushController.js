@@ -169,8 +169,8 @@ async function testPush(req, res) {
     const result = await sendToUser(userId, {
       title: "Test Senegram",
       body: "Les notifications push fonctionnent ! 🎉",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/badge-72.png",
+      icon: "/icons/icon-192.svg",
+      badge: "/icons/badge-72.svg",
       tag: "test-notification",
       data: { url: "/", timestamp: Date.now() },
     });

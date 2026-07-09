@@ -122,8 +122,8 @@ export function PushProvider({ children }) {
         navigator.serviceWorker.ready.then((reg) => {
           reg.showNotification(`${from?.display_name || from?.username}`, {
             body: message?.content || "Nouveau message",
-            icon: "/favicon.svg",
-            badge: "/favicon.svg",
+            icon: "/icons/icon-192.svg",
+            badge: "/icons/badge-72.svg",
             tag: `msg-${conversation_id}`,
             data: { url: `/conversation/${conversation_id}`, conversation_id },
             requireInteraction: true,

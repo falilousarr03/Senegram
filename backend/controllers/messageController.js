@@ -334,8 +334,8 @@ exports.send = async (req, res, next) => {
         pushController.sendToUsers(offlineMemberIds, {
           title: req.user.display_name || req.user.username,
           body: type === "text" ? content : `[${type}]`,
-          icon: "/icons/icon-192.png",
-          badge: "/icons/badge-72.png",
+          icon: "/icons/icon-192.svg",
+          badge: "/icons/badge-72.svg",
           tag: `msg-${convId}`,
           data: { url: `/conversation/${convId}`, conversation_id: Number(convId), message_id: msgId },
           requireInteraction: true,
