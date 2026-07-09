@@ -27,6 +27,7 @@ Chat, appels audio/vidéo, groupes, partage de fichiers — le tout en local, sa
 - [Démarrage rapide](#-démarrage-rapide)
 - [Configuration](#-configuration)
 - [Utilisation sur mobile (LAN)](#-utilisation-sur-mobile-lan--https)
+
 - [API REST](#-api-rest)
 - [Événements Socket.IO](#-événements-socketio)
 - [Schéma de la base](#-schéma-de-la-base-de-données)
@@ -274,6 +275,8 @@ Sur le mobile :
 3. Connecte-toi normalement, les appels fonctionnent. ✨
 
 > 💡 Sur Windows, pense à **autoriser le pare-feu** (scripts `scripts/open-firewall.bat`).
+
+---
 
 ---
 

@@ -55,13 +55,24 @@ const server = useHttps
  *   - en développement on autorise *toute* origine (pratique pour accéder
  *     depuis un autre PC du LAN via http://<ip>:5173 sans config manuelle) ;
  *   - en production on restreint à CLIENT_URL (liste séparée par virgules).
+ *
+ * Support ngrok : on accepte aussi dynamiquement les sous-domaines ngrok-free.app
+ * et ngrok.io pour permettre l'accès distant sans configuration supplémentaire.
  */
 const allowed = (process.env.CLIENT_URL || "")
   .split(",").map((s) => s.trim()).filter(Boolean);
 
+const isNgrokDomain = (origin) => {
+  if (!origin) return false;
+  return origin.includes(".ngrok-free.app") || origin.includes(".ngrok.io");
+};
+
 const corsOrigin = (origin, cb) => {
-  if (!origin) return cb(null, true);                       
+  if (!origin) return cb(null, true);
+  // En dev, on autorise tout (LAN + ngrok)
   if (process.env.NODE_ENV !== "production") return cb(null, true);
+  // En prod, on accepte les domaines ngrok dynamiquement
+  if (isNgrokDomain(origin)) return cb(null, true);
   if (allowed.includes(origin)) return cb(null, true);
   cb(new Error(`Origine non autorisée : ${origin}`));
 };
