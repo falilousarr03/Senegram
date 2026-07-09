@@ -4,12 +4,16 @@
 
 html, body, #root {
   height: 100%;
-  background: #0b1220;
+  background:
+    radial-gradient(circle at top left, rgba(0, 133, 63, 0.16), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(227, 27, 35, 0.10), transparent 28%),
+    #eef4f1;
 }
 
 body {
   font-family: "Inter", system-ui, sans-serif;
   color: #0f172a;
+  text-rendering: geometricPrecision;
 }
 
 /* Scrollbar élégante */
@@ -27,38 +31,54 @@ body {
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all
+           focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-brand-600 hover:bg-brand-700 text-white shadow-soft disabled:opacity-50;
+    @apply btn bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white shadow-soft disabled:opacity-50;
   }
   .btn-ghost {
-    @apply btn text-ink-700 hover:bg-ink-100;
+    @apply btn text-ink-700 hover:bg-ink-100 active:bg-ink-200;
   }
   .input {
-    @apply w-full px-4 py-3 rounded-xl bg-white border border-ink-200
+    @apply w-full px-4 py-3 rounded-xl bg-white/95 border border-ink-200
            focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent
            placeholder:text-ink-500 transition;
   }
   .card {
-    @apply bg-white rounded-2xl shadow-soft;
+    @apply bg-white rounded-2xl shadow-soft border border-white/70;
   }
 
   /* Fond paysagé discret pour la zone "aucune conv sélectionnée" */
   .chat-empty-bg {
     background:
-      radial-gradient(1200px 600px at 20% 20%, rgba(16,185,129,0.15), transparent 60%),
-      radial-gradient(800px 500px at 80% 80%, rgba(253, 239, 66, 0.12), transparent 55%),
+      linear-gradient(135deg, rgba(255,255,255,0.92), rgba(236,253,245,0.80)),
+      radial-gradient(900px 500px at 22% 16%, rgba(16,185,129,0.18), transparent 58%),
+      radial-gradient(680px 420px at 82% 82%, rgba(253, 239, 66, 0.16), transparent 55%),
       linear-gradient(180deg, #f8fafc, #eef2f7);
+  }
+
+  .chat-surface {
+    background:
+      linear-gradient(rgba(248, 250, 252, 0.92), rgba(248, 250, 252, 0.92)),
+      radial-gradient(circle at 20% 15%, rgba(0, 133, 63, 0.10), transparent 24%),
+      radial-gradient(circle at 90% 90%, rgba(253, 239, 66, 0.12), transparent 22%);
+  }
+
+  .chat-pattern {
+    background-image:
+      linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
   }
 
   /* Bulle message */
   .bubble {
-    @apply relative max-w-[75%] px-4 py-2 rounded-2xl shadow-bubble;
+    @apply relative max-w-[82%] sm:max-w-[74%] px-3 py-1.5 rounded-2xl shadow-bubble;
     word-wrap: break-word;
   }
   .bubble-me   { @apply bg-brand-600 text-white rounded-br-md; }
-  .bubble-them { @apply bg-white text-ink-900 rounded-bl-md border border-ink-100; }
+  .bubble-them { @apply bg-white text-ink-900 rounded-bl-md border border-ink-100/80; }
 
   /* Point statut présence */
   .presence-dot {

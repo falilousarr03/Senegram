@@ -24,6 +24,12 @@ const useHttps =
   certExists ||
   process.env.HTTPS === "1" ||
   process.env.HTTPS === "true";
+const backendTarget = `${certExists ? "https" : "http"}://127.0.0.1:5000`;
+const ignoredProxySocketErrors = new Set([
+  "EPIPE",
+  "ECONNRESET",
+  "ERR_STREAM_WRITE_AFTER_END",
+]);
 
 // eslint-disable-next-line no-console
 console.log(
@@ -48,18 +54,32 @@ export default defineConfig({
     https: useHttps, // plugin-basic-ssl fournit la cle/cert
     strictPort: true,
 
-    // Proxy vers le backend (optionnel, mais pratique)
+    // Proxy vers le backend pour eviter les appels directs a un certificat
+    // auto-signe depuis le navigateur en developpement.
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: backendTarget,
         changeOrigin: true,
+        secure: false,
+      },
+      '/uploads': {
+        target: backendTarget,
+        changeOrigin: true,
+        secure: false,
       },
       '/socket.io': {
-        target: 'http://localhost:5000',
+        target: backendTarget,
         ws: true,  // WebSocket support pour Socket.IO
         changeOrigin: true,
+        secure: false,
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            if (ignoredProxySocketErrors.has(err.code)) return;
+            // eslint-disable-next-line no-console
+            console.error('[vite] socket proxy error:', err);
+          });
+        },
       },
     },
   },
 });
-

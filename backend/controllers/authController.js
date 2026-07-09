@@ -78,7 +78,7 @@ exports.login = async (req, res, next) => {
     if (!ok) return res.status(401).json({ message: "Identifiants invalides" });
 
     await pool.query(
-      "UPDATE users SET status = 'online', last_seen = NOW() WHERE id = ?",
+      "UPDATE users SET status = 'online', is_online = 1, last_seen = NOW() WHERE id = ?",
       [user.id],
     );
 
@@ -100,7 +100,7 @@ exports.me = async (req, res, next) => {
 exports.logout = async (req, res, next) => {
   try {
     await pool.query(
-      "UPDATE users SET status = 'offline', last_seen = NOW() WHERE id = ?",
+      "UPDATE users SET status = 'offline', is_online = 0, last_seen = NOW() WHERE id = ?",
       [req.user.id],
     );
     res.json({ ok: true });

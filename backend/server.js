@@ -59,7 +59,7 @@ const server = useHttps
  * Support ngrok : on accepte aussi dynamiquement les sous-domaines ngrok-free.app
  * et ngrok.io pour permettre l'accès distant sans configuration supplémentaire.
  */
-const allowed = (process.env.CLIENT_URL || "")
+const allowed = (process.env.FRONTEND_URL || process.env.CLIENT_URL || "")
   .split(",").map((s) => s.trim()).filter(Boolean);
 
 const isNgrokDomain = (origin) => {
@@ -107,6 +107,8 @@ app.use(
 );
 
 // ---------- Routes ----------
+app.get("/health", (_req, res) => res.send("OK"));
+
 app.get("/", (_req, res) =>
   res.json({
     app: "🇸🇳 Senegram API",

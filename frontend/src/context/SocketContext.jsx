@@ -1,9 +1,8 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useEffect, useState } from "react";
 import { connectSocket, disconnectSocket } from "../services/socket";
 import { useAuth } from "./AuthContext";
 
-const SocketContext = createContext(null);
-export const useSocket = () => useContext(SocketContext);
+export const SocketContext = createContext(null);
 
 export function SocketProvider({ children }) {
   const { token, user } = useAuth();
@@ -18,12 +17,18 @@ export function SocketProvider({ children }) {
     s.on("connect",    () => console.log("🟢 socket connected", s.id));
     s.on("disconnect", () => console.log("🔴 socket disconnected"));
 
-    s.on("presence:update", ({ user_id, status }) => {
+    const onPresence = ({ user_id, status }) => {
       setOnlineUsers((prev) => ({ ...prev, [user_id]: status }));
-    });
+    };
+
+    s.on("presence:update", onPresence);
+    s.on("user_online", onPresence);
+    s.on("user_offline", onPresence);
 
     return () => {
-      s.off("presence:update");
+      s.off("presence:update", onPresence);
+      s.off("user_online", onPresence);
+      s.off("user_offline", onPresence);
       disconnectSocket();
       setSocket(null);
     };

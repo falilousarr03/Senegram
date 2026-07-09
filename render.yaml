@@ -1,0 +1,48 @@
+# Render Blueprint - Déploie Backend + MySQL automatiquement
+# Usage: Push sur GitHub → Render Dashboard → New → Blueprint → Select repo
+
+services:
+  - type: web
+    name: senegram-backend
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: CLIENT_URL
+        value: https://TON_APP.vercel.app
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DB_HOST
+        fromDatabase:
+          name: senegram-db
+          property: host
+      - key: DB_USER
+        fromDatabase:
+          name: senegram-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: senegram-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: senegram-db
+          property: database
+      - key: DB_PORT
+        fromDatabase:
+          name: senegram-db
+          property: port
+
+databases:
+  - name: senegram-db
+    databaseName: senegram
+    user: senegram
+    plan: free
+    region: frankfurt

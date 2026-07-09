@@ -16,10 +16,16 @@ export function buildIceServers() {
   return ice;
 }
 
-export async function getMediaStream(video) {
+export async function getMediaStream(video, facingMode = "user") {
   return await navigator.mediaDevices.getUserMedia({
     audio: true,
-    video: video ? { width: 1280, height: 720 } : false,
+    video: video
+      ? {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode,
+        }
+      : false,
   });
 }
 

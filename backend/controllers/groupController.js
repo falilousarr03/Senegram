@@ -42,7 +42,13 @@ exports.create = async (req, res, next) => {
     );
 
     await conn.commit();
-    res.status(201).json({ conversation: await buildConversation(convId, req.user.id) });
+    const conversation = await buildConversation(convId, req.user.id);
+    const io = req.app.get("io");
+    members.forEach((uid) => io.joinUserConversation?.(uid, convId));
+    members
+      .filter((uid) => uid !== req.user.id)
+      .forEach((uid) => io.to(`user:${uid}`).emit("group:added", { conversation }));
+    res.status(201).json({ conversation });
   } catch (err) {
     await conn.rollback();
     next(err);
@@ -65,7 +71,9 @@ exports.update = async (req, res, next) => {
        WHERE id = ? AND type = 'group'`,
       [name || null, description || null, avatar_url || null, req.params.id],
     );
-    res.json({ conversation: await buildConversation(req.params.id, req.user.id) });
+    const conversation = await buildConversation(req.params.id, req.user.id);
+    req.app.get("io").to(`conv:${req.params.id}`).emit("group:updated", { conversation });
+    res.json({ conversation });
   } catch (err) { next(err); }
 };
 
@@ -82,7 +90,12 @@ exports.addMembers = async (req, res, next) => {
       `INSERT IGNORE INTO conversation_members (conversation_id, user_id, role) VALUES ?`,
       [rows],
     );
-    res.json({ conversation: await buildConversation(req.params.id, req.user.id) });
+    const conversation = await buildConversation(req.params.id, req.user.id);
+    const io = req.app.get("io");
+    ids.forEach((uid) => io.joinUserConversation?.(uid, req.params.id));
+    ids.forEach((uid) => io.to(`user:${uid}`).emit("group:added", { conversation }));
+    io.to(`conv:${req.params.id}`).emit("group:updated", { conversation });
+    res.json({ conversation });
   } catch (err) { next(err); }
 };
 
@@ -96,7 +109,41 @@ exports.removeMember = async (req, res, next) => {
       `DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?`,
       [req.params.id, req.params.userId],
     );
+    const conversation = await buildConversation(req.params.id, req.user.id);
+    req.app.get("io").to(`conv:${req.params.id}`).emit("group:updated", { conversation });
     res.json({ ok: true });
+  } catch (err) { next(err); }
+};
+
+exports.updateMemberRole = async (req, res, next) => {
+  try {
+    if (!(await isGroupAdmin(req.params.id, req.user.id))) {
+      return res.status(403).json({ message: "Admin requis" });
+    }
+    const role = req.body.role;
+    if (!["admin", "member"].includes(role)) {
+      return res.status(400).json({ message: "Rôle invalide" });
+    }
+    if (Number(req.params.userId) === req.user.id) {
+      return res.status(400).json({ message: "Impossible de modifier son propre rôle" });
+    }
+
+    const [[target]] = await pool.query(
+      `SELECT role FROM conversation_members WHERE conversation_id = ? AND user_id = ?`,
+      [req.params.id, req.params.userId],
+    );
+    if (!target) return res.status(404).json({ message: "Membre introuvable" });
+    if (target.role === "owner") {
+      return res.status(403).json({ message: "Impossible de modifier le propriétaire" });
+    }
+
+    await pool.query(
+      `UPDATE conversation_members SET role = ? WHERE conversation_id = ? AND user_id = ?`,
+      [role, req.params.id, req.params.userId],
+    );
+    const conversation = await buildConversation(req.params.id, req.user.id);
+    req.app.get("io").to(`conv:${req.params.id}`).emit("group:updated", { conversation });
+    res.json({ conversation });
   } catch (err) { next(err); }
 };
 
@@ -111,3 +158,27 @@ exports.leave = async (req, res, next) => {
     res.json({ ok: true });
   } catch (err) { next(err); }
 };
+
+exports.remove = async (req, res, next) => {
+  try {
+    if (!(await isGroupAdmin(req.params.id, req.user.id))) {
+      return res.status(403).json({ message: "Admin requis" });
+    }
+    const [[conv]] = await pool.query(
+      `SELECT id, type FROM conversations WHERE id = ?`,
+      [req.params.id],
+    );
+    if (!conv || conv.type !== "group") {
+      return res.status(404).json({ message: "Groupe introuvable" });
+    }
+
+    const io = req.app.get("io");
+    io.to(`conv:${req.params.id}`).emit("group:deleted", {
+      conversation_id: Number(req.params.id),
+    });
+    await pool.query(`DELETE FROM conversations WHERE id = ? AND type = 'group'`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+};
+
+exports.isGroupAdmin = isGroupAdmin;

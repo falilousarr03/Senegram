@@ -9,6 +9,15 @@ const callSocket = require("./callSocket");
  * Le frontend envoie le token via `auth: { token }` dans io().
  */
 module.exports = function socketHandler(io) {
+  io.onlineUsers = io.onlineUsers || new Map();
+  io.joinUserConversation = (userId, conversationId) => {
+    const sockets = io.onlineUsers.get(Number(userId));
+    if (!sockets) return;
+    sockets.forEach((socketId) => {
+      io.sockets.sockets.get(socketId)?.join(`conv:${conversationId}`);
+    });
+  };
+
   // Middleware d'auth
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
@@ -25,6 +34,9 @@ module.exports = function socketHandler(io) {
   io.on("connection", async (socket) => {
     const userId = socket.user.id;
     console.log(`🔌 [socket] ${socket.user.username} connecté (${socket.id})`);
+    const userSockets = io.onlineUsers.get(userId) || new Set();
+    userSockets.add(socket.id);
+    io.onlineUsers.set(userId, userSockets);
 
     // Room personnelle pour les notifications
     socket.join(`user:${userId}`);
@@ -41,7 +53,8 @@ module.exports = function socketHandler(io) {
     }
 
     // Statut = online
-    await pool.query(`UPDATE users SET status = 'online' WHERE id = ?`, [userId]);
+    await pool.query(`UPDATE users SET status = 'online', is_online = 1 WHERE id = ?`, [userId]);
+    io.emit("user_online", { user_id: userId, status: "online" });
     io.emit("presence:update", { user_id: userId, status: "online" });
 
     // Handlers
@@ -49,15 +62,27 @@ module.exports = function socketHandler(io) {
     callSocket(io, socket);
 
     socket.on("disconnect", async () => {
+      const sockets = io.onlineUsers.get(userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size) {
+          io.onlineUsers.set(userId, sockets);
+          console.log(`🔌 [socket] ${socket.user.username} onglet fermé (${socket.id})`);
+          return;
+        }
+        io.onlineUsers.delete(userId);
+      }
       await pool.query(
-        `UPDATE users SET status = 'offline', last_seen = NOW() WHERE id = ?`,
+        `UPDATE users SET status = 'offline', is_online = 0, last_seen = NOW() WHERE id = ?`,
         [userId],
       );
-      io.emit("presence:update", {
+      const payload = {
         user_id: userId,
         status: "offline",
         last_seen: new Date(),
-      });
+      };
+      io.emit("user_offline", payload);
+      io.emit("presence:update", payload);
       console.log(`🔌 [socket] ${socket.user.username} déconnecté`);
     });
   });

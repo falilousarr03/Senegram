@@ -1,6 +1,8 @@
 const pool = require("../config/db");
 const { ensureMember } = require("./conversationController");
 
+const ALLOWED_REACTIONS = new Set(["👍", "❤️", "😂", "😮", "😢", "🔥"]);
+
 /**
  * Construit la représentation complète d'un message :
  *   - attachments
@@ -23,7 +25,121 @@ async function hydrateMessage(msgId) {
      FROM attachments WHERE message_id = ?`,
     [msgId],
   );
-  return { ...msg, attachments };
+  const [reactions] = await pool.query(
+    `SELECT mr.id, mr.message_id, mr.user_id, mr.reaction, mr.created_at,
+            u.username, u.display_name
+     FROM message_reactions mr
+     JOIN users u ON u.id = mr.user_id
+     WHERE mr.message_id = ?
+     ORDER BY mr.created_at ASC`,
+    [msgId],
+  );
+  return { ...msg, attachments, reactions };
+}
+
+async function hydrateManyMessages(rows) {
+  const ids = rows.map((r) => r.id);
+  let attByMsg = {};
+  let reactByMsg = {};
+
+  if (ids.length) {
+    const [atts] = await pool.query(`SELECT * FROM attachments WHERE message_id IN (?)`, [ids]);
+    attByMsg = atts.reduce((acc, a) => {
+      (acc[a.message_id] = acc[a.message_id] || []).push(a);
+      return acc;
+    }, {});
+
+    const [reactions] = await pool.query(
+      `SELECT mr.id, mr.message_id, mr.user_id, mr.reaction, mr.created_at,
+              u.username, u.display_name
+       FROM message_reactions mr
+       JOIN users u ON u.id = mr.user_id
+       WHERE mr.message_id IN (?)
+       ORDER BY mr.created_at ASC`,
+      [ids],
+    );
+    reactByMsg = reactions.reduce((acc, r) => {
+      (acc[r.message_id] = acc[r.message_id] || []).push(r);
+      return acc;
+    }, {});
+  }
+
+  return rows.map((m) => ({
+    ...m,
+    attachments: attByMsg[m.id] || [],
+    reactions: reactByMsg[m.id] || [],
+  }));
+}
+
+async function updateReadTimestamps(conn, conversationId) {
+  await conn.query(
+    `UPDATE messages m
+     SET m.read_at = NOW()
+     WHERE m.conversation_id = ?
+       AND m.read_at IS NULL
+       AND m.is_deleted = 0
+       AND NOT EXISTS (
+         SELECT 1
+         FROM conversation_members cm
+         WHERE cm.conversation_id = m.conversation_id
+           AND cm.user_id <> m.sender_id
+           AND NOT EXISTS (
+             SELECT 1
+             FROM message_reads mr
+             WHERE mr.message_id = m.id AND mr.user_id = cm.user_id
+           )
+       )`,
+    [conversationId],
+  );
+}
+
+async function markConversationRead(conversationId, userId) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[last]] = await conn.query(
+      `SELECT MAX(id) AS id FROM messages WHERE conversation_id = ?`,
+      [conversationId],
+    );
+
+    if (last.id) {
+      await conn.query(
+        `UPDATE conversation_members
+         SET last_read_message_id = ?
+         WHERE conversation_id = ? AND user_id = ?`,
+        [last.id, conversationId, userId],
+      );
+      await conn.query(
+        `INSERT IGNORE INTO message_reads (message_id, user_id)
+         SELECT id, ?
+         FROM messages
+         WHERE conversation_id = ?
+           AND sender_id <> ?
+           AND is_deleted = 0
+           AND id <= ?`,
+        [userId, conversationId, userId, last.id],
+      );
+      await conn.query(
+        `UPDATE messages
+         SET delivered_at = COALESCE(delivered_at, NOW())
+         WHERE conversation_id = ?
+           AND sender_id <> ?
+           AND delivered_at IS NULL
+           AND is_deleted = 0
+           AND id <= ?`,
+        [conversationId, userId, last.id],
+      );
+      await updateReadTimestamps(conn, conversationId);
+    }
+
+    await conn.commit();
+    return last.id || null;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
 exports.list = async (req, res, next) => {
@@ -49,22 +165,7 @@ exports.list = async (req, res, next) => {
       before ? [convId, before, limit] : [convId, limit],
     );
 
-    // Attachments en batch
-    const ids = rows.map((r) => r.id);
-    let attByMsg = {};
-    if (ids.length) {
-      const [atts] = await pool.query(
-        `SELECT * FROM attachments WHERE message_id IN (?)`,
-        [ids],
-      );
-      attByMsg = atts.reduce((acc, a) => {
-        (acc[a.message_id] = acc[a.message_id] || []).push(a);
-        return acc;
-      }, {});
-    }
-    const messages = rows
-      .map((m) => ({ ...m, attachments: attByMsg[m.id] || [] }))
-      .reverse(); // renvoie dans l'ordre chronologique
+    const messages = (await hydrateManyMessages(rows)).reverse();
 
     res.json({ messages });
   } catch (err) { next(err); }
@@ -118,11 +219,29 @@ exports.send = async (req, res, next) => {
     await conn.query(`UPDATE conversations SET updated_at = NOW() WHERE id = ?`, [convId]);
     await conn.commit();
 
-    const full = await hydrateMessage(msgId);
-
-    // Broadcast via socket.io
     const io = req.app.get("io");
+    const [members] = await pool.query(
+      `SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id <> ?`,
+      [convId, req.user.id],
+    );
+    const hasOnlineRecipient = members.some((m) => io.onlineUsers?.has(Number(m.user_id)));
+    if (hasOnlineRecipient) {
+      await pool.query(
+        `UPDATE messages SET delivered_at = COALESCE(delivered_at, NOW()) WHERE id = ?`,
+        [msgId],
+      );
+    }
+
+    const full = await hydrateMessage(msgId);
+    io.to(`conv:${convId}`).emit("message_sent", full);
     io.to(`conv:${convId}`).emit("message:new", full);
+    if (full.delivered_at) {
+      io.to(`conv:${convId}`).emit("message_delivered", {
+        conversation_id: Number(convId),
+        message_id: msgId,
+        delivered_at: full.delivered_at,
+      });
+    }
 
     res.status(201).json({ message: full });
   } catch (err) {
@@ -174,4 +293,127 @@ exports.edit = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.markRead = async (req, res, next) => {
+  try {
+    const convId = req.params.id;
+    const member = await ensureMember(convId, req.user.id);
+    if (!member) return res.status(403).json({ message: "Accès refusé" });
+
+    const lastMessageId = await markConversationRead(convId, req.user.id);
+    const io = req.app.get("io");
+    io.to(`conv:${convId}`).emit("message_read", {
+      conversation_id: Number(convId),
+      user_id: req.user.id,
+      last_message_id: lastMessageId,
+      read_at: new Date(),
+    });
+    io.to(`conv:${convId}`).emit("message:read", {
+      conversation_id: Number(convId),
+      user_id: req.user.id,
+      last_message_id: lastMessageId,
+    });
+
+    res.json({ ok: true, last_read_message_id: lastMessageId });
+  } catch (err) { next(err); }
+};
+
+exports.pin = async (req, res, next) => {
+  try {
+    const [[msg]] = await pool.query(
+      `SELECT m.*, cm.role
+       FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ?
+       WHERE m.id = ? AND c.type = 'group'`,
+      [req.user.id, req.params.id],
+    );
+    if (!msg) return res.status(404).json({ message: "Message de groupe introuvable" });
+    if (!["owner", "admin"].includes(msg.role)) return res.status(403).json({ message: "Admin requis" });
+
+    await pool.query(
+      `UPDATE messages SET is_pinned = 1, pinned_by = ?, pinned_at = NOW() WHERE id = ?`,
+      [req.user.id, req.params.id],
+    );
+    const full = await hydrateMessage(req.params.id);
+    req.app.get("io").to(`conv:${msg.conversation_id}`).emit("message_pinned", full);
+    res.json({ message: full });
+  } catch (err) { next(err); }
+};
+
+exports.unpin = async (req, res, next) => {
+  try {
+    const [[msg]] = await pool.query(
+      `SELECT m.*, cm.role
+       FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ?
+       WHERE m.id = ? AND c.type = 'group'`,
+      [req.user.id, req.params.id],
+    );
+    if (!msg) return res.status(404).json({ message: "Message de groupe introuvable" });
+    if (!["owner", "admin"].includes(msg.role)) return res.status(403).json({ message: "Admin requis" });
+
+    await pool.query(
+      `UPDATE messages SET is_pinned = 0, pinned_by = NULL, pinned_at = NULL WHERE id = ?`,
+      [req.params.id],
+    );
+    req.app.get("io").to(`conv:${msg.conversation_id}`).emit("message_unpinned", {
+      id: Number(req.params.id),
+      conversation_id: msg.conversation_id,
+    });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+};
+
+exports.react = async (req, res, next) => {
+  try {
+    const reaction = req.body.reaction;
+    if (!ALLOWED_REACTIONS.has(reaction)) {
+      return res.status(400).json({ message: "Réaction invalide" });
+    }
+    const [[msg]] = await pool.query(`SELECT * FROM messages WHERE id = ?`, [req.params.id]);
+    if (!msg) return res.status(404).json({ message: "Message introuvable" });
+    const member = await ensureMember(msg.conversation_id, req.user.id);
+    if (!member) return res.status(403).json({ message: "Accès refusé" });
+
+    const [[existing]] = await pool.query(
+      `SELECT reaction FROM message_reactions WHERE message_id = ? AND user_id = ?`,
+      [req.params.id, req.user.id],
+    );
+    await pool.query(
+      `INSERT INTO message_reactions (message_id, user_id, reaction)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE reaction = VALUES(reaction), created_at = NOW()`,
+      [req.params.id, req.user.id, reaction],
+    );
+    const full = await hydrateMessage(req.params.id);
+    req.app.get("io").to(`conv:${msg.conversation_id}`).emit(
+      existing ? "reaction_updated" : "reaction_added",
+      { message: full, user_id: req.user.id, reaction },
+    );
+    res.json({ message: full });
+  } catch (err) { next(err); }
+};
+
+exports.removeReaction = async (req, res, next) => {
+  try {
+    const [[msg]] = await pool.query(`SELECT * FROM messages WHERE id = ?`, [req.params.id]);
+    if (!msg) return res.status(404).json({ message: "Message introuvable" });
+    const member = await ensureMember(msg.conversation_id, req.user.id);
+    if (!member) return res.status(403).json({ message: "Accès refusé" });
+
+    await pool.query(
+      `DELETE FROM message_reactions WHERE message_id = ? AND user_id = ?`,
+      [req.params.id, req.user.id],
+    );
+    const full = await hydrateMessage(req.params.id);
+    req.app.get("io").to(`conv:${msg.conversation_id}`).emit("reaction_removed", {
+      message: full,
+      user_id: req.user.id,
+    });
+    res.json({ message: full });
+  } catch (err) { next(err); }
+};
+
 exports.hydrateMessage = hydrateMessage;
+exports.markConversationRead = markConversationRead;

@@ -4,18 +4,18 @@ import axios from "axios";
  * Détermine l'URL du backend.
  *
  *  - Si VITE_API_URL est défini (prod ou config explicite), on l'utilise.
- *  - Sinon on prend dynamiquement l'hôte courant du navigateur, ce qui
- *    permet d'accéder à l'app depuis n'importe quelle machine du LAN
- *    (http://192.168.x.y:5173 → API http://192.168.x.y:5000) sans rebuild.
+ *  - En dev, on laisse Vite proxifier /api, /uploads et /socket.io via
+ *    l'origine courante. Cela evite les erreurs de certificat auto-signe
+ *    quand le frontend est servi en HTTPS.
+ *  - Sinon on prend dynamiquement l'hôte courant du navigateur.
  */
 function resolveApiUrl() {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (import.meta.env.DEV) return "";
   if (typeof window !== "undefined" && window.location) {
     const proto = window.location.protocol;     // "http:" | "https:"
     const host  = window.location.hostname;     // "localhost" | "192.168.1.42" | …
     const port  = import.meta.env.VITE_API_PORT || "5000";
-    // Note : si la page est chargée en https://, le backend DOIT aussi
-    // ecouter en https:// (même port, même cert auto-signé).
     return `${proto}//${host}:${port}`;
   }
   return "http://localhost:5000";

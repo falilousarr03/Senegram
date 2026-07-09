@@ -21,11 +21,13 @@ CREATE TABLE users (
   bio              VARCHAR(255) DEFAULT NULL,
   avatar_url       VARCHAR(500) DEFAULT NULL,
   status           ENUM('online','offline','away','busy') DEFAULT 'offline',
+  is_online        BOOLEAN NOT NULL DEFAULT FALSE,
   last_seen        DATETIME DEFAULT NULL,
   created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_users_username (username),
-  INDEX idx_users_email    (email)
+  INDEX idx_users_email    (email),
+  INDEX idx_users_online_last_seen (is_online, last_seen)
 ) ENGINE=InnoDB;
 
 -- -----------------------------------------------------
@@ -87,11 +89,20 @@ CREATE TABLE messages (
   is_edited       BOOLEAN NOT NULL DEFAULT FALSE,
   is_deleted      BOOLEAN NOT NULL DEFAULT FALSE,
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sent_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  delivered_at    DATETIME DEFAULT NULL,
+  read_at         DATETIME DEFAULT NULL,
+  is_pinned       BOOLEAN NOT NULL DEFAULT FALSE,
+  pinned_by       BIGINT UNSIGNED DEFAULT NULL,
+  pinned_at       DATETIME DEFAULT NULL,
   updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_messages_conv (conversation_id, created_at),
+  INDEX idx_messages_status (conversation_id, sender_id, delivered_at, read_at),
+  INDEX idx_messages_pinned (conversation_id, is_pinned, pinned_at),
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
   FOREIGN KEY (sender_id)       REFERENCES users(id)         ON DELETE CASCADE,
-  FOREIGN KEY (reply_to_id)     REFERENCES messages(id)      ON DELETE SET NULL
+  FOREIGN KEY (reply_to_id)     REFERENCES messages(id)      ON DELETE SET NULL,
+  FOREIGN KEY (pinned_by)       REFERENCES users(id)         ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- -----------------------------------------------------
@@ -121,6 +132,21 @@ CREATE TABLE message_reads (
   user_id     BIGINT UNSIGNED NOT NULL,
   read_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_read (message_id, user_id),
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- -----------------------------------------------------
+-- Reactions aux messages
+-- -----------------------------------------------------
+CREATE TABLE message_reactions (
+  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  message_id  BIGINT UNSIGNED NOT NULL,
+  user_id     BIGINT UNSIGNED NOT NULL,
+  reaction    VARCHAR(8) NOT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_message_reaction_user (message_id, user_id),
+  INDEX idx_reactions_message (message_id, reaction),
   FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE
 ) ENGINE=InnoDB;
@@ -163,6 +189,6 @@ CREATE TABLE call_participants (
 -- Les mots de passe correspondent à "password"
 INSERT INTO users (username,email,password_hash,display_name,bio,avatar_url)
 VALUES
-('aminata','aminata@senegram.sn','$2a$10$R0mZqZk8zHjAq.WqjCw/8uQc5v5wY6qv3Q8QyvxJ2YkQXq5Z8rU7K','Aminata Diop','Teranga Dakar','https://i.pravatar.cc/150?img=47'),
-('moussa','moussa@senegram.sn','$2a$10$R0mZqZk8zHjAq.WqjCw/8uQc5v5wY6qv3Q8QyvxJ2YkQXq5Z8rU7K','Moussa Sarr','Thiès',            'https://i.pravatar.cc/150?img=12'),
-('fatou','fatou@senegram.sn','$2a$10$R0mZqZk8zHjAq.WqjCw/8uQc5v5wY6qv3Q8QyvxJ2YkQXq5Z8rU7K','Fatou Ndiaye','Saint-Louis',       'https://i.pravatar.cc/150?img=32');
+('aminata','aminata@senegram.sn','$2a$10$A/hIkQE7Fg/u3kDltg8YfOSLX0dr9JGqncdOsNuYoiIqtwvwhLO52','Aminata Diop','Teranga Dakar','https://i.pravatar.cc/150?img=47'),
+('moussa','moussa@senegram.sn','$2a$10$A/hIkQE7Fg/u3kDltg8YfOSLX0dr9JGqncdOsNuYoiIqtwvwhLO52','Moussa Sarr','Thiès',            'https://i.pravatar.cc/150?img=12'),
+('fatou','fatou@senegram.sn','$2a$10$A/hIkQE7Fg/u3kDltg8YfOSLX0dr9JGqncdOsNuYoiIqtwvwhLO52','Fatou Ndiaye','Saint-Louis',       'https://i.pravatar.cc/150?img=32');

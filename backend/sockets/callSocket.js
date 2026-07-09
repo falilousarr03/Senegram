@@ -22,14 +22,15 @@ module.exports = function callSocket(io, socket) {
         [conversation_id, userId, type || "audio"],
       );
       const callId = r.insertId;
+      const [[caller]] = await pool.query(
+        `SELECT id, username, display_name, avatar_url FROM users WHERE id = ?`,
+        [userId],
+      );
       io.to(`user:${to_user_id}`).emit("call:incoming", {
         call_id: callId,
         conversation_id,
         type: type || "audio",
-        from: {
-          id:          userId,
-          username:    socket.user.username,
-        },
+        from: caller || { id: userId, username: socket.user.username },
         sdp_offer,
       });
       socket.emit("call:created", { call_id: callId });
