@@ -66,7 +66,7 @@ export default function CallOverlay() {
         )}
 
         {!isVideo && remoteStream && (
-          <audio ref={remoteAudioRef} autoPlay playsInline />
+          <audio ref={remoteAudioRef} autoPlay playsInline controls={false} />
         )}
 
         {/* État : appel entrant / sortant / en cours */}
