@@ -61,4 +61,7 @@ pool
     console.error("❌ Impossible de se connecter à MySQL :", err.message);
   });
 
-module.exports = { pool };
+// Exporte le pool directement (controllers font pool.query())
+// + compat object pour d'autres usages
+module.exports = pool;
+module.exports.pool = pool;
