@@ -10,6 +10,7 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
+    preDeployCommand: npm run db:init
     envVars:
       - key: NODE_ENV
         value: production
