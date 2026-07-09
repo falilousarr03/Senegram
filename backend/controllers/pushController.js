@@ -36,6 +36,8 @@ async function subscribe(req, res) {
       return res.status(400).json({ message: "Invalid subscription data" });
     }
 
+    console.log("[Push] Subscribe request for user:", userId, "endpoint:", endpoint);
+
     // Upsert subscription
     await pool.query(
       `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
@@ -44,9 +46,10 @@ async function subscribe(req, res) {
       [userId, endpoint, keys.p256dh, keys.auth]
     );
 
+    console.log("[Push] Subscription saved for user:", userId);
     res.json({ success: true });
   } catch (err) {
-    console.error("Push subscribe error:", err);
+    console.error("[Push] Subscribe error:", err);
     res.status(500).json({ message: "Failed to save subscription" });
   }
 }
@@ -67,14 +70,17 @@ async function unsubscribe(req, res) {
       return res.status(400).json({ message: "Endpoint required" });
     }
 
+    console.log("[Push] Unsubscribe request for user:", userId, "endpoint:", endpoint);
+
     await pool.query(
       `DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?`,
       [userId, endpoint]
     );
 
+    console.log("[Push] Subscription removed for user:", userId);
     res.json({ success: true });
   } catch (err) {
-    console.error("Push unsubscribe error:", err);
+    console.error("[Push] Unsubscribe error:", err);
     res.status(500).json({ message: "Failed to remove subscription" });
   }
 }
@@ -91,6 +97,8 @@ async function sendToUser(userId, payload) {
       [userId]
     );
 
+    console.log("[Push] Found", subs.length, "subscriptions for user:", userId);
+
     if (!subs.length) return { sent: 0, failed: 0 };
 
     const pushPromises = subs.map(async (sub) => {
@@ -102,16 +110,18 @@ async function sendToUser(userId, payload) {
           },
           JSON.stringify(payload)
         );
+        console.log("[Push] Sent to:", sub.endpoint);
         return { success: true };
       } catch (err) {
         // Remove invalid subscriptions (410 Gone, 404 Not Found)
         if (err.statusCode === 410 || err.statusCode === 404) {
+          console.log("[Push] Removing invalid subscription:", sub.endpoint);
           await pool.query(
             `DELETE FROM push_subscriptions WHERE endpoint = ?`,
             [sub.endpoint]
           );
         }
-        console.error("Push send error:", err.message);
+        console.error("[Push] Send error:", err.message);
         return { success: false, error: err.message };
       }
     });
@@ -119,9 +129,10 @@ async function sendToUser(userId, payload) {
     const results = await Promise.all(pushPromises);
     const sent = results.filter((r) => r.success).length;
     const failed = results.filter((r) => !r.success).length;
+    console.log("[Push] Results - sent:", sent, "failed:", failed);
     return { sent, failed };
   } catch (err) {
-    console.error("Push notification error:", err);
+    console.error("[Push] Notification error:", err);
     return { sent: 0, failed: 0 };
   }
 }
@@ -154,6 +165,7 @@ async function testPush(req, res) {
 
   try {
     const userId = req.user.id;
+    console.log("[Push] Test push for user:", userId);
     const result = await sendToUser(userId, {
       title: "Test Senegram",
       body: "Les notifications push fonctionnent ! 🎉",
@@ -165,7 +177,7 @@ async function testPush(req, res) {
 
     res.json({ success: true, ...result });
   } catch (err) {
-    console.error("Test push error:", err);
+    console.error("[Push] Test push error:", err);
     res.status(500).json({ message: "Test push failed" });
   }
 }

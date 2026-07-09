@@ -49,23 +49,28 @@ export function PushProvider({ children }) {
     if (Notification.permission !== "granted") {
       const perm = await Notification.requestPermission();
       setPermission(perm);
+      console.log("[Push] Permission requested:", perm);
       if (perm !== "granted") return;
     }
 
     setLoading(true);
     try {
       const reg = await navigator.serviceWorker.ready;
+      console.log("[Push] SW ready:", reg.scope);
       const existingSub = await reg.pushManager.getSubscription();
       if (existingSub) {
+        console.log("[Push] Existing subscription found:", existingSub.endpoint);
         setSubscription(existingSub);
         await sendSubscriptionToServer(existingSub);
         return;
       }
 
+      console.log("[Push] Creating new subscription...");
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
+      console.log("[Push] New subscription created:", sub.endpoint);
       setSubscription(sub);
       await sendSubscriptionToServer(sub);
     } catch (err) {

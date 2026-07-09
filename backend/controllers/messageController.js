@@ -330,6 +330,7 @@ exports.send = async (req, res, next) => {
         .filter((m) => !io.onlineUsers?.has(Number(m.user_id)))
         .map((m) => m.user_id);
       if (offlineMemberIds.length) {
+        console.log("[Message] Sending push to offline users:", offlineMemberIds);
         pushController.sendToUsers(offlineMemberIds, {
           title: req.user.display_name || req.user.username,
           body: type === "text" ? content : `[${type}]`,
