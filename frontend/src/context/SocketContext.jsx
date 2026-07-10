@@ -16,6 +16,7 @@ export function SocketProvider({ children }) {
 
     s.on("connect",    () => console.log("🟢 socket connected", s.id));
     s.on("disconnect", () => console.log("🔴 socket disconnected"));
+    s.on("connect_error", (err) => console.warn("🟠 socket connect error", err.message));
 
     const onPresence = ({ user_id, status }) => {
       setOnlineUsers((prev) => ({ ...prev, [user_id]: status }));
@@ -29,6 +30,7 @@ export function SocketProvider({ children }) {
       s.off("presence:update", onPresence);
       s.off("user_online", onPresence);
       s.off("user_offline", onPresence);
+      s.off("connect_error");
       disconnectSocket();
       setSocket(null);
     };

@@ -1,24 +1,16 @@
 import axios from "axios";
 
 /**
- * Détermine l'URL du backend.
- *
- *  - Si VITE_API_URL est défini (prod ou config explicite), on l'utilise.
- *  - En dev, on laisse Vite proxifier /api, /uploads et /socket.io via
- *    l'origine courante. Cela evite les erreurs de certificat auto-signe
- *    quand le frontend est servi en HTTPS.
- *  - Sinon on prend dynamiquement l'hôte courant du navigateur.
+ * Détermine l'URL du backend (sans /api à la fin).
  */
 function resolveApiUrl() {
   if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL
-      .replace(/\/+$/, "")
-      .replace(/\/api(?:\/api)*$/, "");
+    return import.meta.env.VITE_API_URL.replace(/\/+$/, "").replace(/\/api(?:\/api)*$/, "");
   }
   if (import.meta.env.DEV) return "";
   if (typeof window !== "undefined" && window.location) {
-    const proto = window.location.protocol;     // "http:" | "https:"
-    const host  = window.location.hostname;     // "localhost" | "192.168.1.42" | …
+    const proto = window.location.protocol;
+    const host  = window.location.hostname;
     const port  = import.meta.env.VITE_API_PORT || "5000";
     return `${proto}//${host}:${port}`;
   }

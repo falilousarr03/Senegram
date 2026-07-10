@@ -33,9 +33,5 @@ export function disconnectSocket() {
     disconnectTimer = null;
   };
 
-  if (import.meta.env.DEV) {
-    disconnectTimer = setTimeout(closeSocket, 0);
-  } else {
-    closeSocket();
-  }
+  disconnectTimer = setTimeout(closeSocket, 500);
 }

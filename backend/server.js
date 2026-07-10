@@ -68,12 +68,22 @@ const isNgrokDomain = (origin) => {
   return origin.includes(".ngrok-free.app") || origin.includes(".ngrok.io");
 };
 
+const isVercelDomain = (origin) => {
+  if (!origin) return false;
+  try {
+    return new URL(origin).hostname.endsWith(".vercel.app");
+  } catch {
+    return false;
+  }
+};
+
 const corsOrigin = (origin, cb) => {
   if (!origin) return cb(null, true);
   // En dev, on autorise tout (LAN + ngrok)
   if (process.env.NODE_ENV !== "production") return cb(null, true);
   // En prod, on accepte les domaines ngrok dynamiquement
   if (isNgrokDomain(origin)) return cb(null, true);
+  if (isVercelDomain(origin)) return cb(null, true);
   if (allowed.includes(origin)) return cb(null, true);
   cb(new Error(`Origine non autorisée : ${origin}`));
 };
