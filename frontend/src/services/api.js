@@ -10,7 +10,9 @@ import axios from "axios";
  *  - Sinon on prend dynamiquement l'hôte courant du navigateur.
  */
 function resolveApiUrl() {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace(/\/+$/, "").replace(/\/api$/, "");
+  }
   if (import.meta.env.DEV) return "";
   if (typeof window !== "undefined" && window.location) {
     const proto = window.location.protocol;     // "http:" | "https:"
