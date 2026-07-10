@@ -175,6 +175,12 @@ export function PushProvider({ children }) {
     const handleMessage = (event) => {
       if (event.data?.type === "NOTIFICATION_CLICK") {
         window.location.href = event.data.url;
+      } else if (event.data?.type === "APP_CACHE_RESET") {
+        const key = "senegram_cache_reset_reloaded";
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, "1");
+          window.location.reload();
+        }
       }
     };
     navigator.serviceWorker.addEventListener("message", handleMessage);

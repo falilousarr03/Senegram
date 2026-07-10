@@ -2,18 +2,51 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "headers": [
+    {
+      "source": "/",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
+      "source": "/manifest.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, max-age=0" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/socket.io/(.*)",
-      "destination": "https://senegram-backend.onrender.com/socket.io/$1"
+      "destination": "https://senegram.onrender.com/socket.io/$1"
     },
     {
       "source": "/api/(.*)",
-      "destination": "https://senegram-backend.onrender.com/api/$1"
+      "destination": "https://senegram.onrender.com/api/$1"
     },
     {
       "source": "/uploads/(.*)",
-      "destination": "https://senegram-backend.onrender.com/uploads/$1"
+      "destination": "https://senegram.onrender.com/uploads/$1"
     },
     {
       "source": "/(.*)",
