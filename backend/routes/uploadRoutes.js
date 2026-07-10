@@ -3,9 +3,9 @@ const auth   = require("../middlewares/auth");
 const upload = require("../config/multer");
 const ctrl   = require("../controllers/uploadController");
 
-router.use(auth);
-
 router.get("/storage/health", ctrl.storageHealth);
+
+router.use(auth);
 
 // Un fichier quelconque (image, video, audio, document)
 router.post("/file", upload.single("file"), ctrl.uploadSingle);

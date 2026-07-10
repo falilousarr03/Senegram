@@ -149,6 +149,7 @@ app.use((err, req, res, _next) => {
   res.status(status).json({
     message: err.message || "Erreur interne",
     code:    err.code    || "SERVER_ERROR",
+    details: err.details || undefined,
   });
 });
 

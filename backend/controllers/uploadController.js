@@ -6,6 +6,14 @@ const AUDIO_MIMES = new Set(["audio/webm", "audio/mpeg", "audio/mp3", "audio/ogg
 const MAX_VOICE_SIZE = 10 * 1024 * 1024;
 const MAX_VOICE_DURATION = 5 * 60;
 
+function storageErrorDetails(err) {
+  return {
+    error: err.name || err.code || "StorageError",
+    statusCode: err.statusCode || err.$metadata?.httpStatusCode || null,
+    message: err.message,
+  };
+}
+
 function localFallbackAllowed() {
   return process.env.NODE_ENV !== "production" || process.env.ALLOW_LOCAL_UPLOADS === "true";
 }
@@ -47,6 +55,7 @@ async function persistUpload(file, uploadType) {
       const error = new Error("Stockage Backblaze indisponible ou mal configuré");
       error.status = 503;
       error.code = "STORAGE_UNAVAILABLE";
+      error.details = storageErrorDetails(err);
       throw error;
     }
   }
