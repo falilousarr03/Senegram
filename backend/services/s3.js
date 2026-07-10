@@ -11,6 +11,7 @@ const {
 } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { v4: uuidv4 } = require("uuid");
+const crypto = require("crypto");
 const path = require("path");
 
 function env(...names) {
@@ -23,6 +24,10 @@ function env(...names) {
 
 function stripTrailingSlash(value) {
   return value ? value.replace(/\/+$/, "") : "";
+}
+
+function isBackblazeEndpoint(endpoint) {
+  return /backblazeb2\.com/i.test(endpoint || "");
 }
 
 // S3 client configuration
@@ -51,6 +56,9 @@ function createS3Client() {
     endpoint: stripTrailingSlash(endpoint),
     region,
     publicUrl: stripTrailingSlash(env("S3_PUBLIC_URL", "B2_PUBLIC_URL", "BACKBLAZE_PUBLIC_URL")),
+    accessKeyId,
+    secretAccessKey,
+    isBackblaze: isBackblazeEndpoint(endpoint),
   };
 }
 
@@ -69,6 +77,101 @@ function getPublicUrl(key) {
   if (s3.publicUrl) return `${s3.publicUrl}/${key}`;
   if (s3.endpoint && s3.bucket) return `${s3.endpoint}/${s3.bucket}/${key}`;
   return null;
+}
+
+async function parseBackblazeResponse(response, fallbackMessage) {
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
+  }
+
+  if (!response.ok) {
+    const message = typeof body === "object" && body?.message
+      ? body.message
+      : fallbackMessage;
+    const err = new Error(message);
+    err.statusCode = response.status;
+    err.body = body;
+    throw err;
+  }
+
+  return body;
+}
+
+async function authorizeBackblaze() {
+  const credentials = Buffer
+    .from(`${s3.accessKeyId}:${s3.secretAccessKey}`)
+    .toString("base64");
+
+  const response = await fetch("https://api.backblazeb2.com/b2api/v2/b2_authorize_account", {
+    headers: { Authorization: `Basic ${credentials}` },
+  });
+
+  return parseBackblazeResponse(response, "Autorisation Backblaze impossible");
+}
+
+async function findBackblazeBucket(auth) {
+  const response = await fetch(`${auth.apiUrl}/b2api/v2/b2_list_buckets`, {
+    method: "POST",
+    headers: {
+      Authorization: auth.authorizationToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      accountId: auth.accountId,
+      bucketName: s3.bucket,
+    }),
+  });
+  const data = await parseBackblazeResponse(response, "Bucket Backblaze introuvable");
+  const bucket = data.buckets?.find((item) => item.bucketName === s3.bucket);
+  if (!bucket) {
+    const err = new Error(`Bucket Backblaze introuvable: ${s3.bucket}`);
+    err.statusCode = 404;
+    throw err;
+  }
+  return bucket;
+}
+
+async function getBackblazeUploadUrl(auth, bucketId) {
+  const response = await fetch(`${auth.apiUrl}/b2api/v2/b2_get_upload_url`, {
+    method: "POST",
+    headers: {
+      Authorization: auth.authorizationToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ bucketId }),
+  });
+  return parseBackblazeResponse(response, "URL upload Backblaze impossible");
+}
+
+async function uploadToBackblazeNative(file, key) {
+  const auth = await authorizeBackblaze();
+  const bucket = await findBackblazeBucket(auth);
+  const upload = await getBackblazeUploadUrl(auth, bucket.bucketId);
+  const sha1 = crypto.createHash("sha1").update(file.buffer).digest("hex");
+  const encodedName = key.split("/").map(encodeURIComponent).join("/");
+
+  const response = await fetch(upload.uploadUrl, {
+    method: "POST",
+    headers: {
+      Authorization: upload.authorizationToken,
+      "X-Bz-File-Name": encodedName,
+      "Content-Type": file.mimetype,
+      "Content-Length": String(file.size),
+      "X-Bz-Content-Sha1": sha1,
+    },
+    body: file.buffer,
+  });
+  await parseBackblazeResponse(response, "Upload natif Backblaze impossible");
+
+  const url = getPublicUrl(key);
+  if (!url) {
+    throw new Error("URL publique Backblaze introuvable. Configure S3_PUBLIC_URL ou B2_PUBLIC_URL.");
+  }
+  return { key, url, bucket: s3.bucket };
 }
 
 async function uploadToS3(file, uploadType = "message") {
@@ -96,6 +199,10 @@ async function uploadToS3(file, uploadType = "message") {
     return { key, url, bucket: s3.bucket };
   } catch (err) {
     console.error("[S3] Upload error:", err);
+    if (s3.isBackblaze) {
+      console.warn("[S3] Tentative fallback API native Backblaze B2");
+      return uploadToBackblazeNative(file, key);
+    }
     throw err;
   }
 }
@@ -143,8 +250,42 @@ async function checkStorage() {
       endpoint: s3.endpoint,
       region: s3.region,
       publicUrl: s3.publicUrl || getPublicUrl("test"),
+      driver: "s3",
     };
   } catch (err) {
+    if (s3.isBackblaze) {
+      try {
+        const auth = await authorizeBackblaze();
+        const bucket = await findBackblazeBucket(auth);
+        return {
+          ok: true,
+          configured: true,
+          bucket: bucket.bucketName,
+          endpoint: s3.endpoint,
+          region: s3.region,
+          publicUrl: s3.publicUrl || getPublicUrl("test"),
+          driver: "backblaze-native",
+          s3HeadBucket: {
+            ok: false,
+            error: err.name || err.code || "StorageError",
+            statusCode: err.$metadata?.httpStatusCode || null,
+          },
+        };
+      } catch (nativeErr) {
+        return {
+          ok: false,
+          configured: true,
+          bucket: s3.bucket,
+          endpoint: s3.endpoint,
+          region: s3.region,
+          publicUrl: s3.publicUrl || null,
+          driver: "backblaze-native",
+          error: nativeErr.name || nativeErr.code || "StorageError",
+          statusCode: nativeErr.statusCode || null,
+          message: nativeErr.message,
+        };
+      }
+    }
     return {
       ok: false,
       configured: true,
