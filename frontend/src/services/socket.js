@@ -19,8 +19,9 @@ export function connectSocket(token) {
   socketToken = token;
   socket = io(API_URL, {
     auth: { token },
-    transports: ["websocket", "polling"],
+    transports: ["polling", "websocket"],
     reconnection: true,
+    upgrade: false,
   });
   return socket;
 }

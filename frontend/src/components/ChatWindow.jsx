@@ -54,6 +54,7 @@ export default function ChatWindow({
   const typingStopTimers = useRef({});
   const pullStartRef = useRef(null);
   const hasLoadedInitial = useRef(false);
+  const loadingRef = useRef(false);
 
   const d = useMemo(() => convDisplay(conversation, user), [conversation, user]);
   const isGroup = conversation?.type === "group";
@@ -75,6 +76,8 @@ export default function ChatWindow({
 
   // Load messages with pagination
   const loadMessages = useCallback(async (conversationId, beforeId = null, prepend = false) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (prepend) setLoadingMore(true);
     else setLoading(true);
     try {
@@ -93,6 +96,7 @@ export default function ChatWindow({
     } finally {
       setLoading(false);
       setLoadingMore(false);
+      loadingRef.current = false;
     }
   }, []);
 
@@ -100,24 +104,24 @@ export default function ChatWindow({
   useEffect(() => {
     if (!conversation) return;
     let live = true;
-    setLoading(true);
-    api.get(`/messages/conversation/${conversation.id}`)
-      .then(({ data }) => { if (live) setMessages(data.messages); })
-      .finally(() => { if (live) { setLoading(false); hasLoadedInitial.current = true; } });
+    loadMessages(conversation.id).then(() => {
+      if (live) {
+        api.post(`/conversations/${conversation.id}/read`).catch(() => {});
+        setTypingUsers({});
+        setSearchOpen(false);
+        setSearchQ("");
+        setSearchResults([]);
+        setReplyTo(null);
+      }
+    });
 
-    api.post(`/conversations/${conversation.id}/read`).catch(() => {});
-    setTypingUsers({});
-    setSearchOpen(false);
-    setSearchQ("");
-    setSearchResults([]);
-    setReplyTo(null);
     return () => {
       live = false;
       clearTimeout(typingTimer.current);
       Object.values(typingStopTimers.current).forEach((timer) => clearTimeout(timer));
       typingStopTimers.current = {};
     };
-  }, [conversation?.id]);
+  }, [conversation?.id, loadMessages]);
 
   useEffect(() => {
     if (!conversation || !searchOpen) return;

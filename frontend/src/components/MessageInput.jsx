@@ -99,11 +99,18 @@ export default function MessageInput({ onSend, onTyping, replyTo, onCancelReply 
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Safari supports audio/mp4, Chrome/Firefox support audio/webm
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
-        : "audio/webm";
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : MediaRecorder.isTypeSupported("audio/mp4")
+            ? "audio/mp4"
+            : MediaRecorder.isTypeSupported("audio/mpeg")
+              ? "audio/mpeg"
+              : "";
       chunksRef.current = [];
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -111,14 +118,16 @@ export default function MessageInput({ onSend, onTyping, replyTo, onCancelReply 
       };
       recorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const blobType = recorder.mimeType || "audio/webm";
+        const ext = blobType.includes("mp4") ? "m4a" : blobType.includes("mpeg") ? "mp3" : "webm";
+        const blob = new Blob(chunksRef.current, { type: blobType });
         if (blob.size > 10 * 1024 * 1024) {
           toast.error("Note vocale trop lourde (max 10 MB)");
           sendAfterStopRef.current = false;
           return;
         }
         const duration = recordSecondsRef.current || 1;
-        const fileName = `note-vocale-${Date.now()}.webm`;
+        const fileName = `note-vocale-${Date.now()}.${ext}`;
 
         if (sendAfterStopRef.current) {
           sendAfterStopRef.current = false;
@@ -192,7 +201,7 @@ export default function MessageInput({ onSend, onTyping, replyTo, onCancelReply 
 
   async function uploadVoiceBlob(blob, duration, fileName) {
     const fd = new FormData();
-    fd.append("file", new File([blob], fileName, { type: "audio/webm" }));
+    fd.append("file", new File([blob], fileName, { type: blob.type || "audio/webm" }));
     fd.append("duration", String(duration));
     const { data } = await api.post("/upload/voice", fd, {
       headers: { "Content-Type": "multipart/form-data" },
